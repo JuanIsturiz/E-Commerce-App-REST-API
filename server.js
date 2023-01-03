@@ -1,4 +1,4 @@
-//todo add cart, user and checkout routes
+//todo refactor routes
 
 const express = require("express");
 const app = express();
@@ -121,17 +121,26 @@ app.post(
 );
 
 //users routes
-app.get("/users", isNotAuth, (req, res) => {
-  res.send("/users GET request received!");
+app.get("/users", async (req, res) => {
+  try {
+    const users = await pool.query("SELECT * FROM accounts");
+    res.send(res.send(users.rows));
+  } catch (err) {
+    throw err;
+  }
 });
 
-//profile routes
-app.get("/users/:id", (req, res) => {
+app.get("/users/:id", async (req, res) => {
   const { id } = req.params;
-  res.send(`/users/${id} GET request received!`);
+  try {
+    const user = await pool.query("SELECT * FROM accounts WHERE id =$1", [id]);
+    res.send(user.rows[0]);
+  } catch (err) {
+    throw err;
+  }
 });
 
-app.post("/dashboard/profile", async (req, res) => {
+app.put("/users/:id", async (req, res) => {
   const { id } = req.user;
   const { first, last } = req.body;
 
@@ -154,31 +163,212 @@ app.post("/dashboard/profile", async (req, res) => {
   try {
     if (first && !last) {
       await pool.query(cases[1].query, cases[1].values);
-      console.log(`user updated, new values ${first}`);
+      res.send(`user updated, new values ${first}`);
     }
     if (!first && last) {
       await pool.query(cases[2].query, cases[2].values);
-      console.log(`user updated, new values ${last}`);
+      res.send(`user updated, new values ${last}`);
     }
     if (first && last) {
       await pool.query(cases[3].query, cases[3].values);
-      console.log(`user updated, new values ${first} | ${last}`);
+      res.send(`user updated, new values ${first} | ${last}`);
     }
-    res.redirect("/dashboard");
+    res.redirect(`/user/${id}`);
   } catch (err) {
     throw err;
   }
 });
 
-//logout routes
-app.get("/logout", (req, res) => {
-  req.logout((err) => {
-    if (err) {
-      return next(err);
+app.delete("/users/:id", async (req, res) => {
+  const { id } = req.params;
+  try {
+    await pool.query("DELETE FROM accounts WHERE id = $1", [id]);
+    res.send(`Deleted user with ID: ${id}`);
+  } catch (err) {
+    throw err;
+  }
+});
+
+//cart routes
+app.get("/users/cart", async (req, res) => {
+  try {
+    const carts = await pool.query("SELECT * FROM carts");
+    res.send(carts.rows);
+  } catch (err) {
+    throw err;
+  }
+});
+
+app.get("/users/cart/:cartId", async (req, res) => {
+  const { cartId } = req.params;
+  try {
+    const cart = await pool.query(
+      "SELECT * FROM cart_items WHERE cart_id = $1",
+      [cartId]
+    );
+    res.send(cart.rows);
+  } catch (err) {
+    throw err;
+  }
+});
+
+app.post("/cart", async (req, res) => {
+  const created = new Date().toISOString().split("T")[0];
+  try {
+    const cart = await pool.query(
+      "INSERT INTO carts (created) VALUES ($1) RETURNING *",
+      [created]
+    );
+    res.send(`new cart created with ID: ${cart.rows[0].id}`);
+  } catch (err) {
+    throw err;
+  }
+});
+
+app.post("/users/:userId/cart/:cartId", async (req, res) => {
+  const { userId, cartId } = req.params;
+  const { quantity, product_id } = req.body;
+  const modified = new Date().toISOString().split("T")[0];
+
+  try {
+    await pool.query("UPDATE carts SET modified = $1 WHERE id = $2", [
+      modified,
+      cartId,
+    ]);
+
+    const newItem = await pool.query(
+      "INSERT INTO cart_items (quantity, modified, user_id, product_id, cart_id) VALUES ($1, $2, $3, $4, $5) RETURNING *",
+      [quantity, modified, userId, product_id, cartId]
+    );
+    res.send(newItem.rows[0]);
+  } catch (err) {
+    throw err;
+  }
+});
+
+//delete whole cart
+app.delete("/cart/:cartId", async (req, res) => {
+  const { cartId } = req.params;
+  try {
+    await pool.query("DELETE FROM carts WHERE id = $1", [cartId]);
+    res.send(`Deleted cart with ID: ${cartId}`);
+  } catch (err) {
+    throw err;
+  }
+});
+
+//delete items from given cart
+app.delete("/users/cart/:id", async (req, res) => {
+  const { id } = req.params;
+  const { product_id } = req.body;
+  try {
+    await pool.query(
+      "DELETE FROM cart_items WHERE user_id = $1 AND product_id = $2 RETURNING *",
+      [id, product_id]
+    );
+    const itemName = await pool.query(
+      "SELECT name FROM products WHERE id = $1",
+      [product_id]
+    );
+    res.send(`Succesfully deleted ${itemName.rows[0]} from cart!`);
+  } catch (err) {
+    throw err;
+  }
+});
+
+//orders routes
+app.get("/orders", async (req, res) => {
+  try {
+    const orders = await pool.query("SELECT * FROM orders");
+    res.send(orders.rows);
+  } catch (err) {
+    throw err;
+  }
+});
+
+app.get("orders/:id", async (req, res) => {
+  const { id } = req.params;
+  try {
+    const order = await pool.query("SELECT * FROM orders WHERE id = $1", [id]);
+    res.send(order.rows[0]);
+  } catch (err) {
+    throw err;
+  }
+});
+
+/* app.post("/orders", async (req, res) => {
+  const { deliver_date, total, status, user_id, products } = req.body;
+  const modified = new Date().toISOString().split("T")[0];
+
+  try {
+    const newOrder = await pool.query(
+      "INSERT INTO orders (deliver_date, total, status, modified, user_id) VALUES ($1, $2, $3, $4, $5) RETURNING *",
+      [deliver_date, total, status, modified, user_id]
+    );
+
+    for (const product of products) {
+      const { id, qty, price } = product;
+      await pool.query(
+        "INSERT INTO order_item (quantity, price, order_id, product_id) VALUES ($1, $2, $3, $4)",
+        [qty, price, newOrder.rows[0].id, id]
+      );
+      await pool.query(
+        "UPDATE products SET stock_qty = stock_qty - $1 WHERE id = $2",
+        [qty, id]
+      );
     }
-    console.log("user logged out..");
-    res.redirect("/");
-  });
+    res
+      .status(201)
+      .send(
+        `Order placed by user: ${user_id} with a total: ${newOrder.rows[0].total}`
+      );
+  } catch (err) {
+    throw err;
+  }
+}); */
+
+app.put("/orders/:id", async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+  const modified = new Date().toISOString().split("T")[0];
+
+  try {
+    const order = await pool.query(
+      "UPDATE orders SET status = $1, modified = $2 WHERE id = $3 RETURNING *",
+      [status, modified, id]
+    );
+    if (order.rows[0].status === "cancelled") {
+      res.redirect(`/orders/cancel/${id}`);
+    } else {
+      res.redirect("/orders");
+    }
+  } catch (err) {
+    throw err;
+  }
+});
+
+app.delete("/orders/:id/cancel", async (req, res) => {
+  const { id } = req.params;
+  try {
+    const { rows } = await pool.query(
+      "SELECT quantity, product_id FROM order_item WHERE order_id = $1",
+      [id]
+    );
+
+    for (const product of rows) {
+      const { quantity, product_id } = product;
+      await pool.query(
+        "UPDATE products SET stock_qty = stock_qty + $1 WHERE id = $2",
+        [quantity, product_id]
+      );
+    }
+
+    await pool.query("DELETE FROM order_item WHERE order_id = $1", [id]);
+    await pool.query("DELETE FROM orders WHERE id = $1", [id]);
+    res.send(`Deleted order with ID: ${id}`);
+  } catch (err) {
+    throw err;
+  }
 });
 
 //products routes
@@ -244,29 +434,15 @@ app.delete("/products/:id", async (req, res) => {
   }
 });
 
-//orders routes
-app.get("/orders", async (req, res) => {
-  try {
-    const orders = await pool.query("SELECT * FROM orders");
-    res.send(orders.rows);
-  } catch (err) {
-    throw err;
-  }
-});
-app.get("orders/id", async (req, res) => {
-  const { id } = req.params;
-  try {
-    const order = await pool.query("SELECT * FROM orders WHERE id = $1", [id]);
-    res.send(order.rows[0]);
-  } catch (err) {
-    throw err;
-  }
+// checkout routes
+app.get("/checkout", (req, res) => {
+  res.send("/checkout GET request received");
 });
 
-app.post("/orders", async (req, res) => {
+app.post("/cart/:cartId/checkout", async (req, res) => {
+  const { cartId } = req.params;
   const { deliver_date, total, status, user_id, products } = req.body;
   const modified = new Date().toISOString().split("T")[0];
-
   try {
     const newOrder = await pool.query(
       "INSERT INTO orders (deliver_date, total, status, modified, user_id) VALUES ($1, $2, $3, $4, $5) RETURNING *",
@@ -275,6 +451,18 @@ app.post("/orders", async (req, res) => {
 
     for (const product of products) {
       const { id, qty, price } = product;
+
+      await pool.query("DELETE FROM cart_items WHERE product_id = $1", [id]);
+
+      const cartCheck = await pool.query(
+        "SELECT * FROM cart_items WHERE cart_id = $1",
+        [cartId]
+      );
+
+      if (!cartCheck.rowCount) {
+        await pool.query("DELETE FROM carts WHERE id = $1", [cartId]);
+      }
+
       await pool.query(
         "INSERT INTO order_item (quantity, price, order_id, product_id) VALUES ($1, $2, $3, $4)",
         [qty, price, newOrder.rows[0].id, id]
@@ -294,49 +482,17 @@ app.post("/orders", async (req, res) => {
   }
 });
 
-app.put("/orders/:id", async (req, res) => {
-  const { id } = req.params;
-  const { status } = req.body;
-  const modified = new Date().toISOString().split("T")[0];
-
-  try {
-    const order = await pool.query(
-      "UPDATE orders SET status = $1, modified = $2 WHERE id = $3 RETURNING *",
-      [status, modified, id]
-    );
-    if (order.rows[0].status === "cancelled") {
-      res.redirect(`/orders/cancel/${id}`);
-    } else {
-      res.redirect("/orders");
+//logout routes
+app.get("/logout", (req, res) => {
+  req.logout((err) => {
+    if (err) {
+      return next(err);
     }
-  } catch (err) {
-    throw err;
-  }
+    console.log("user logged out..");
+    res.redirect("/");
+  });
 });
 
-app.delete("/orders/cancel/:id", async (req, res) => {
-  const { id } = req.params;
-  try {
-    const { rows } = await pool.query(
-      "SELECT quantity, product_id FROM order_item WHERE order_id = $1",
-      [id]
-    );
-
-    for (const product of rows) {
-      const { quantity, product_id } = product;
-      await pool.query(
-        "UPDATE products SET stock_qty = stock_qty + $1 WHERE id = $2",
-        [quantity, product_id]
-      );
-    }
-
-    await pool.query("DELETE FROM order_item WHERE order_id = $1", [id]);
-    await pool.query("DELETE FROM orders WHERE id = $1", [id]);
-    res.send(`Deleted order with ID: ${id}`);
-  } catch (err) {
-    throw err;
-  }
-});
 //server start
 app.listen(PORT, () => {
   console.log(`Server listening on port ${PORT}`);
