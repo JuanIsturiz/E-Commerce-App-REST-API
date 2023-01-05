@@ -3,12 +3,13 @@
 const Pool = require("pg").Pool;
 const { DB } = require("../config");
 
+//setup connection to postgres database
 const pool = new Pool({
-  user: DB.USER,
-  host: DB.HOST,
-  database: DB.NAME,
-  password: DB.PASSWORD,
-  port: DB.PORT,
+  user: DB.PGUSER,
+  host: DB.PGHOST,
+  database: DB.PGNAME,
+  password: DB.PGPASSWORD,
+  port: DB.PGPORT,
 });
 
 module.exports = pool;

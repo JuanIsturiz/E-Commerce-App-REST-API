@@ -1,21 +1,20 @@
-/* const express = require("express"),
-  loginRouter = express.Router(),
-  passport = require("passport");
+const passport = require("passport");
+const { isAuth } = require("../middlewares/authentication");
 
-loginRouter.get("/", (req, res) => {
-  res.send("Server login!");
+const loginRouter = require("express").Router();
+
+//main login endpoint
+loginRouter.get("/", isAuth, (req, res) => {
+  res.send("/login GET request received!");
 });
 
+//logs user with passport
 loginRouter.post(
   "/",
   passport.authenticate("local", {
-    successRedirect: "/user",
+    successRedirect: "/dashboard",
     failureRedirect: "/login",
-  }),
-  (req, res) => {
-    res.send("login successfull!");
-  }
+  })
 );
 
 module.exports = loginRouter;
- */
